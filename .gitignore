@@ -1,0 +1,142 @@
+# --- Python ---
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+share/python-wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+
+# Virtual envs
+.venv/
+venv/
+env/
+ENV/
+env.bak/
+venv.bak/
+.python-version
+
+# pytest / coverage
+.pytest_cache/
+.coverage
+.coverage.*
+htmlcov/
+.tox/
+.nox/
+coverage.xml
+*.cover
+.hypothesis/
+
+# mypy / ruff / pyright
+.mypy_cache/
+.ruff_cache/
+.pyright/
+
+# Jupyter
+.ipynb_checkpoints/
+
+# --- Terraform ---
+**/.terraform/*
+*.tfstate
+*.tfstate.*
+*.tfstate.backup
+*.tfvars
+!*.tfvars.example
+.terraform.lock.hcl
+crash.log
+crash.*.log
+override.tf
+override.tf.json
+*_override.tf
+*_override.tf.json
+.terraformrc
+terraform.rc
+tfplan
+*.tfplan
+
+# --- dbt ---
+dbt/target/
+dbt/dbt_packages/
+dbt/logs/
+dbt/.user.yml
+dbt/profiles.yml
+dbt/.dbt/
+
+# --- Dagster ---
+orchestration/dagster_project/.dagster/
+orchestration/dagster_project/dagster_home/
+dagster.yaml.local
+*.tmp.dagster
+
+# --- elementary ---
+edr_target/
+.edr/
+
+# --- Streamlit ---
+.streamlit/secrets.toml
+
+# --- macOS ---
+.DS_Store
+.AppleDouble
+.LSOverride
+Icon
+._*
+.Spotlight-V100
+.Trashes
+.fseventsd
+.TemporaryItems
+
+# --- VS Code ---
+.vscode/
+*.code-workspace
+
+# --- JetBrains / IntelliJ / PyCharm ---
+.idea/
+*.iml
+
+# --- Env / secrets ---
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.crt
+.aws/
+secrets/
+credentials.json
+
+# --- Docker ---
+docker-compose.override.yml
+
+# --- Logs / data dumps ---
+logs/
+*.log
+data/
+tmp/
+.cache/
+*.parquet
+*.csv.gz
+*.zip
+!ingestion/seeds/*.csv
+!dbt/seeds/*.csv
+
+# --- Local model artefacts ---
+serving/api/models/*.pkl
+serving/api/models/*.txt
+serving/api/models/*.bin
+!serving/api/models/.gitkeep
