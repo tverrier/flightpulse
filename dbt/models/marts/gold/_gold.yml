@@ -1,0 +1,119 @@
+version: 2
+
+models:
+  - name: fct_flight_event
+    description: "Gold transaction fact — one row per scheduled flight."
+    columns:
+      - name: flight_event_sk
+        description: "md5 surrogate of natural key."
+        tests:
+          - not_null
+          - unique
+      - name: flight_date_key
+        tests:
+          - not_null
+          - relationships:
+              to: ref('dim_date')
+              field: date_key
+      - name: carrier_key
+        tests:
+          - not_null
+          - relationships:
+              to: ref('dim_carrier')
+              field: carrier_key
+      - name: origin_airport_key
+        tests:
+          - not_null
+          - relationships:
+              to: ref('dim_airport')
+              field: airport_key
+              config:
+                where: "origin_airport_key is not null"
+      - name: dest_airport_key
+        tests:
+          - not_null
+          - relationships:
+              to: ref('dim_airport')
+              field: airport_key
+              config:
+                where: "dest_airport_key is not null"
+      - name: cancellation_code
+        tests:
+          - accepted_values:
+              values: ['A', 'B', 'C', 'D']
+              severity: warn
+              quote: true
+              config:
+                where: "cancellation_code is not null"
+      - name: reconciliation_status
+        tests:
+          - accepted_values:
+              values: ['live_only', 'bts_only', 'matched', 'mismatch']
+              severity: error
+      - name: arr_delay_min
+        tests:
+          - dbt_expectations.expect_column_quantile_values_to_be_between:
+              quantile: 0.95
+              min_value: -30
+              max_value: 240
+              row_condition: "not cancelled_flag"
+              severity: warn
+      - name: ingested_at
+        tests:
+          - dbt_utils.recency:
+              datepart: hour
+              field: ingested_at
+              interval: 25
+              severity: error
+
+    tests:
+      - dbt_utils.expression_is_true:
+          name: arr_delay_matches_timestamps
+          expression: |
+            arr_delay_min is null
+            or cancelled_flag
+            or arr_delay_min = datediff(minute, scheduled_arr_ts, actual_arr_ts)
+          severity: error
+      - dbt_utils.expression_is_true:
+          name: cancelled_means_no_actual_dep
+          expression: |
+            (not cancelled_flag) or actual_dep_ts is null
+          severity: error
+
+  - name: dim_carrier
+    columns:
+      - name: carrier_key
+        tests: [not_null, unique]
+
+  - name: dim_airport
+    columns:
+      - name: airport_sk
+        tests: [not_null, unique]
+      - name: airport_key
+        tests: [not_null]
+
+  - name: dim_aircraft
+    columns:
+      - name: aircraft_key
+        tests: [not_null, unique]
+
+  - name: dim_date
+    columns:
+      - name: date_key
+        tests: [not_null, unique]
+
+  - name: agg_carrier_otp_daily
+    columns:
+      - name: flight_date
+        tests: [not_null]
+      - name: carrier_key
+        tests:
+          - not_null
+          - relationships:
+              to: ref('dim_carrier')
+              field: carrier_key
+    tests:
+      - dbt_utils.unique_combination_of_columns:
+          combination_of_columns:
+            - flight_date
+            - carrier_key

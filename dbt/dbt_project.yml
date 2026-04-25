@@ -1,0 +1,93 @@
+name: 'flightpulse'
+version: '1.0.0'
+config-version: 2
+
+profile: 'flightpulse'
+
+model-paths: ["models"]
+analysis-paths: ["analyses"]
+test-paths: ["tests"]
+seed-paths: ["seeds"]
+macro-paths: ["macros"]
+snapshot-paths: ["snapshots"]
+
+clean-targets:
+  - "target"
+  - "dbt_packages"
+
+require-dbt-version: [">=1.8.0", "<2.0.0"]
+
+# Variables consumed by macros and incremental models.
+vars:
+  # Backfill window: incrementals re-process this many days back from
+  # max(loaded_at). Set to 35 to cover BTS late corrections.
+  bts_late_arrival_days: 35
+  opensky_late_arrival_days: 2
+
+  # Schema-drift logging
+  drift_log_database: "{{ env_var('DBT_OBS_DATABASE', 'FLIGHTPULSE_OBS') }}"
+  drift_log_schema:   "SCHEMA_DRIFT"
+  drift_log_table:    "BTS_COLUMN_DRIFT"
+
+  # Optional backfill bounds (overridden on cli)
+  backfill_start: ""
+  backfill_end:   ""
+
+  # Iceberg defaults — silver lives in S3 via the EV created in Terraform.
+  iceberg_external_volume: "EV_FLIGHTPULSE_SILVER"
+  iceberg_base_location:   "iceberg/silver"
+  iceberg_catalog:         "SNOWFLAKE"
+
+# -----------------------------------------------------------------------------
+# Model layer config — silver lives in Snowflake-managed Iceberg, gold lives
+# in native Snowflake tables.
+# -----------------------------------------------------------------------------
+models:
+  flightpulse:
+    +persist_docs:
+      relation: true
+      columns: true
+    +on_schema_change: "append_new_columns"
+
+    staging:
+      +materialized: view
+      +schema: staging
+      +tags: ["staging"]
+
+    intermediate:
+      +materialized: ephemeral
+      +schema: intermediate
+      +tags: ["intermediate"]
+
+    marts:
+      +schema: marts
+      +tags: ["marts"]
+      silver:
+        # silver Iceberg tables — managed by dbt-snowflake's iceberg support.
+        +materialized: incremental
+        +incremental_strategy: merge
+        +table_format: iceberg
+        +external_volume: "{{ var('iceberg_external_volume') }}"
+        +catalog: "{{ var('iceberg_catalog') }}"
+        +base_location_root: "{{ var('iceberg_base_location') }}"
+        +tags: ["silver"]
+      gold:
+        # native Snowflake — fast scans, auto-clustering managed below
+        +materialized: incremental
+        +incremental_strategy: merge
+        +tags: ["gold", "critical"]
+
+snapshots:
+  flightpulse:
+    +target_schema: snapshots
+    +strategy: timestamp
+    +updated_at: ingested_at
+
+seeds:
+  flightpulse:
+    +schema: seeds
+    +quote_columns: false
+
+tests:
+  +store_failures: true
+  +schema: dbt_test_failures

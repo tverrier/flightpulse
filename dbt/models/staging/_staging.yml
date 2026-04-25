@@ -1,0 +1,55 @@
+version: 2
+
+models:
+  - name: stg_bts__flights
+    description: "Typed view over bronze.bts_raw with schema-drift-tolerant projection."
+    columns:
+      - name: flight_event_natural_key
+        description: "md5 of (flight_date, carrier, flight_number, origin, crs_dep_time)."
+        tests:
+          - not_null
+      - name: flight_date
+        tests:
+          - not_null
+      - name: carrier_code
+        tests:
+          - not_null
+          - dbt_expectations.expect_column_value_lengths_to_equal:
+              value: 2
+              severity: warn
+      - name: origin_iata
+        tests: [not_null]
+      - name: dest_iata
+        tests: [not_null]
+      - name: cancellation_code
+        tests:
+          - accepted_values:
+              values: ['A', 'B', 'C', 'D']
+              severity: warn
+              quote: true
+              config:
+                where: "cancellation_code is not null"
+
+  - name: stg_opensky__states
+    description: "Typed view over bronze.opensky_raw."
+    columns:
+      - name: icao24
+        tests: [not_null]
+      - name: event_ts
+        tests: [not_null]
+
+  - name: stg_openflights__airports
+    description: "Cleaned OpenFlights airport reference, IATA-keyed."
+    columns:
+      - name: iata
+        tests:
+          - not_null
+          - unique
+
+  - name: stg_openflights__airlines
+    description: "Cleaned OpenFlights airline reference, IATA-keyed."
+    columns:
+      - name: carrier_key
+        tests:
+          - not_null
+          - unique
