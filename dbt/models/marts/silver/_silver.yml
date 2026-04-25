@@ -1,0 +1,20 @@
+version: 2
+
+models:
+  - name: silver_flight_event
+    description: "Silver Iceberg fact — one row per scheduled flight, BTS+OpenSky reconciled."
+    columns:
+      - name: flight_event_natural_key
+        tests: [not_null, unique]
+      - name: flight_date
+        tests: [not_null]
+      - name: carrier_code
+        tests: [not_null]
+
+  - name: silver_aircraft_state
+    description: "Silver Iceberg state vectors — deduped per (icao24, event_ts)."
+    columns:
+      - name: icao24
+        tests: [not_null]
+      - name: event_ts
+        tests: [not_null]

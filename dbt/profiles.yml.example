@@ -1,0 +1,43 @@
+# Copy to ~/.dbt/profiles.yml or set DBT_PROFILES_DIR to this directory
+# (Makefile already does the latter).
+flightpulse:
+  target: dev
+  outputs:
+    dev:
+      type: snowflake
+      account: "{{ env_var('SNOWFLAKE_ACCOUNT') }}"
+      user: "{{ env_var('SNOWFLAKE_USER') }}"
+      password: "{{ env_var('SNOWFLAKE_PASSWORD') }}"
+      role: "{{ env_var('SNOWFLAKE_ROLE', 'RL_FLIGHTPULSE_TRANSFORMER') }}"
+      warehouse: "{{ env_var('SNOWFLAKE_WAREHOUSE', 'WH_FLIGHTPULSE_XS') }}"
+      database: "{{ env_var('SNOWFLAKE_DATABASE_DEV', 'FLIGHTPULSE_DEV') }}"
+      schema: dbt_dev
+      threads: 4
+      client_session_keep_alive: false
+      query_tag: flightpulse-dev
+
+    prod:
+      type: snowflake
+      account: "{{ env_var('SNOWFLAKE_ACCOUNT') }}"
+      user: "{{ env_var('SNOWFLAKE_USER') }}"
+      password: "{{ env_var('SNOWFLAKE_PASSWORD') }}"
+      role: "{{ env_var('SNOWFLAKE_ROLE', 'RL_FLIGHTPULSE_TRANSFORMER') }}"
+      warehouse: "{{ env_var('SNOWFLAKE_WAREHOUSE', 'WH_FLIGHTPULSE_XS') }}"
+      database: "{{ env_var('SNOWFLAKE_DATABASE', 'FLIGHTPULSE_PROD') }}"
+      schema: dbt_prod
+      threads: 8
+      client_session_keep_alive: false
+      query_tag: flightpulse-prod
+
+    ci:
+      type: snowflake
+      account: "{{ env_var('SNOWFLAKE_ACCOUNT') }}"
+      user: "{{ env_var('SNOWFLAKE_USER') }}"
+      password: "{{ env_var('SNOWFLAKE_PASSWORD') }}"
+      role: "{{ env_var('SNOWFLAKE_ROLE', 'RL_FLIGHTPULSE_TRANSFORMER') }}"
+      warehouse: "{{ env_var('SNOWFLAKE_WAREHOUSE', 'WH_FLIGHTPULSE_XS') }}"
+      database: "{{ env_var('SNOWFLAKE_DATABASE_DEV', 'FLIGHTPULSE_DEV') }}"
+      # CI schema is namespaced by PR number to isolate runs.
+      schema: "ci_pr_{{ env_var('GITHUB_PR_NUMBER', 'local') }}"
+      threads: 4
+      query_tag: "flightpulse-ci-pr{{ env_var('GITHUB_PR_NUMBER', 'local') }}"

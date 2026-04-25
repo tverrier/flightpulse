@@ -1,0 +1,17 @@
+version: 2
+
+models:
+  - name: int_flight_event_bts
+    description: "Typed, tz-aware BTS flight events. Internal."
+  - name: int_aircraft_state_clean
+    description: "Latest record per (icao24, event_ts)."
+  - name: int_landing_events
+    description: "Detected landings via on_ground transition."
+  - name: int_flight_event_reconciled
+    description: "BTS + OpenSky landing reconciliation. Carries reconciliation_status."
+    columns:
+      - name: reconciliation_status
+        tests:
+          - accepted_values:
+              values: ['live_only', 'bts_only', 'matched', 'mismatch']
+              severity: error

@@ -1,0 +1,114 @@
+version: 2
+
+sources:
+  # ---------------------------------------------------------------------------
+  # Bronze sources — Glue-cataloged S3 prefixes registered as Snowflake
+  # external tables (managed outside dbt by the Glue crawler in glue.tf).
+  # The Glue catalog integration in snowflake.tf surfaces them under
+  # FLIGHTPULSE_PROD.BRONZE.<table>.
+  # ---------------------------------------------------------------------------
+  - name: bronze
+    database: "{{ env_var('SNOWFLAKE_DATABASE', 'FLIGHTPULSE_PROD') }}"
+    schema: bronze
+    description: "Glue-cataloged S3 external tables. Schema-on-read; no enforcement."
+
+    freshness:
+      warn_after:  { count: 24, period: hour }
+      error_after: { count: 48, period: hour }
+
+    tables:
+      - name: bts_raw
+        description: "BTS On-Time Performance monthly CSV. One row per scheduled flight."
+        loaded_at_field: "to_timestamp_ntz(_metadata$file_last_modified)"
+        external:
+          location: "s3://{{ env_var('S3_RAW_BUCKET', 'flightpulse-raw') }}/bts/"
+          partitions:
+            - name: ds
+              data_type: date
+        freshness:
+          warn_after:  { count: 35, period: day }   # monthly cadence + slack
+          error_after: { count: 45, period: day }
+        columns:
+          - name: flightdate
+            description: "Source FlightDate (string YYYY-MM-DD)."
+          - name: reporting_airline
+            description: "Source Reporting_Airline (IATA carrier code)."
+          - name: flight_number_reporting_airline
+          - name: tail_number
+          - name: origin
+          - name: dest
+          - name: crsdeptime
+          - name: deptime
+          - name: depdelay
+          - name: crsarrtime
+          - name: arrtime
+          - name: arrdelay
+          - name: cancelled
+          - name: cancellationcode
+          - name: diverted
+          - name: distance
+
+      - name: opensky_raw
+        description: "OpenSky state vectors from the streaming sink (1-min Parquet rolls)."
+        loaded_at_field: "to_timestamp_ntz(_metadata$file_last_modified)"
+        external:
+          location: "s3://{{ env_var('S3_RAW_BUCKET', 'flightpulse-raw') }}/opensky/"
+          partitions:
+            - name: ds
+              data_type: date
+            - name: hr
+              data_type: integer
+        freshness:
+          warn_after:  { count: 15, period: minute }
+          error_after: { count: 60, period: minute }
+        columns:
+          - name: icao24
+          - name: callsign
+          - name: origin_country
+          - name: event_ts
+          - name: time_position
+          - name: last_contact
+          - name: longitude
+          - name: latitude
+          - name: baro_altitude
+          - name: on_ground
+          - name: velocity
+          - name: true_track
+          - name: vertical_rate
+          - name: geo_altitude
+          - name: squawk
+          - name: position_source
+
+      - name: openflights_airports_raw
+        description: "OpenFlights airport reference, quarterly seed."
+        external:
+          location: "s3://{{ env_var('S3_RAW_BUCKET', 'flightpulse-raw') }}/openflights/"
+        columns:
+          - name: openflights_id
+          - name: name
+          - name: city
+          - name: country
+          - name: iata
+          - name: icao
+          - name: latitude
+          - name: longitude
+          - name: altitude
+          - name: timezone_offset
+          - name: dst
+          - name: tz_database
+          - name: type
+          - name: source
+
+      - name: openflights_airlines_raw
+        description: "OpenFlights airline reference, quarterly seed."
+        external:
+          location: "s3://{{ env_var('S3_RAW_BUCKET', 'flightpulse-raw') }}/openflights/"
+        columns:
+          - name: openflights_id
+          - name: name
+          - name: alias
+          - name: iata
+          - name: icao
+          - name: callsign
+          - name: country
+          - name: active
