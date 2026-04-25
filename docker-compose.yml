@@ -1,0 +1,128 @@
+# =============================================================================
+# Local streaming stack for `make stream-up`.
+#
+# Redpanda speaks the Kafka API; cheaper to spin up than Kafka+ZK and identical
+# from the producer/consumer's perspective.
+#
+# MinIO substitutes for S3 in local dev. The consumer is pointed at the MinIO
+# endpoint via S3_ENDPOINT_URL; raw bucket is created by the `init-minio`
+# one-shot.
+# =============================================================================
+
+services:
+  redpanda:
+    image: docker.redpanda.com/redpandadata/redpanda:v24.2.4
+    command:
+      - redpanda
+      - start
+      - --overprovisioned
+      - --smp=1
+      - --memory=1G
+      - --reserve-memory=0M
+      - --node-id=0
+      - --check=false
+      - --kafka-addr=PLAINTEXT://0.0.0.0:9092
+      - --advertise-kafka-addr=PLAINTEXT://redpanda:9092
+      - --pandaproxy-addr=0.0.0.0:8082
+      - --advertise-pandaproxy-addr=redpanda:8082
+    ports:
+      - "9092:9092"
+      - "8082:8082"
+      - "9644:9644"
+    healthcheck:
+      test: ["CMD", "rpk", "cluster", "info"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  redpanda-init:
+    image: docker.redpanda.com/redpandadata/redpanda:v24.2.4
+    depends_on:
+      redpanda:
+        condition: service_healthy
+    entrypoint: ["/bin/bash", "-c"]
+    command:
+      - |
+        rpk -X brokers=redpanda:9092 topic create opensky.states.v1 -p 6 -r 1 || true
+        rpk -X brokers=redpanda:9092 topic create opensky.states.dlq -p 1 -r 1 || true
+        rpk -X brokers=redpanda:9092 topic alter-config opensky.states.v1 --set retention.ms=86400000 || true
+    restart: "no"
+
+  minio:
+    image: minio/minio:RELEASE.2024-09-13T20-26-02Z
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: minioadmin
+      MINIO_ROOT_PASSWORD: minioadmin
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    volumes:
+      - minio_data:/data
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:9000/minio/health/live"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  minio-init:
+    image: minio/mc:RELEASE.2024-09-09T16-58-39Z
+    depends_on:
+      minio:
+        condition: service_healthy
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - |
+        mc alias set local http://minio:9000 minioadmin minioadmin
+        mc mb -p local/flightpulse-raw || true
+        mc mb -p local/flightpulse-silver || true
+    restart: "no"
+
+  opensky_producer:
+    build:
+      context: .
+      dockerfile: ingestion/streaming/Dockerfile.producer
+    depends_on:
+      redpanda:
+        condition: service_healthy
+    environment:
+      MSK_BOOTSTRAP: redpanda:9092
+      KAFKA_TOPIC_OPENSKY: opensky.states.v1
+      KAFKA_SECURITY_PROTOCOL: PLAINTEXT
+      OPENSKY_USER: ${OPENSKY_USER:-}
+      OPENSKY_PASS: ${OPENSKY_PASS:-}
+      POLL_INTERVAL_S: "15"
+      LOG_LEVEL: INFO
+      METRICS_NAMESPACE: FlightPulse/OpenSkyProducer
+      METRICS_COMPONENT: producer-local
+    volumes:
+      - heartbeat:/tmp
+
+  opensky_consumer:
+    build:
+      context: .
+      dockerfile: ingestion/streaming/Dockerfile.consumer
+    depends_on:
+      redpanda:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
+    environment:
+      MSK_BOOTSTRAP: redpanda:9092
+      KAFKA_TOPIC_OPENSKY: opensky.states.v1
+      KAFKA_SECURITY_PROTOCOL: PLAINTEXT
+      KAFKA_GROUP_ID: flightpulse-consumer-local
+      S3_RAW_BUCKET: flightpulse-raw
+      S3_OPENSKY_PREFIX: opensky
+      S3_ENDPOINT_URL: http://minio:9000
+      AWS_ACCESS_KEY_ID: minioadmin
+      AWS_SECRET_ACCESS_KEY: minioadmin
+      AWS_DEFAULT_REGION: us-east-1
+      ROLL_INTERVAL_S: "60"
+      LOG_LEVEL: INFO
+      METRICS_NAMESPACE: FlightPulse/OpenSkyConsumer
+      METRICS_COMPONENT: consumer-local
+
+volumes:
+  minio_data: {}
+  heartbeat: {}

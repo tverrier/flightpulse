@@ -1,0 +1,26 @@
+FROM python:3.11-slim
+
+ENV PYTHONUNBUFFERED=1 \
+    PYTHONDONTWRITEBYTECODE=1 \
+    PIP_NO_CACHE_DIR=1
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        build-essential librdkafka-dev curl \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /app
+
+COPY requirements.streaming.txt /app/requirements.streaming.txt
+RUN pip install --upgrade pip && pip install -r /app/requirements.streaming.txt
+
+COPY ingestion /app/ingestion
+
+ENV PYTHONPATH=/app \
+    HEARTBEAT_PATH=/tmp/opensky_producer.heartbeat \
+    LOG_LEVEL=INFO
+
+# ECS / docker healthcheck — heartbeat must be < 60s old.
+HEALTHCHECK --interval=30s --timeout=5s --start-period=30s --retries=2 \
+    CMD test "$(date +%s)" -lt "$(( $(stat -c %Y "$HEARTBEAT_PATH" 2>/dev/null || echo 0) + 60 ))" || exit 1
+
+CMD ["python", "-m", "ingestion.streaming.opensky_producer"]

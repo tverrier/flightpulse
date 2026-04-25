@@ -1,0 +1,21 @@
+FROM python:3.11-slim
+
+ENV PYTHONUNBUFFERED=1 \
+    PYTHONDONTWRITEBYTECODE=1 \
+    PIP_NO_CACHE_DIR=1
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        build-essential librdkafka-dev \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /app
+
+COPY requirements.streaming.txt /app/requirements.streaming.txt
+RUN pip install --upgrade pip && pip install -r /app/requirements.streaming.txt
+
+COPY ingestion /app/ingestion
+
+ENV PYTHONPATH=/app \
+    LOG_LEVEL=INFO
+
+CMD ["python", "-m", "ingestion.streaming.opensky_consumer"]
