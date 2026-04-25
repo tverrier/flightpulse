@@ -1,0 +1,60 @@
+# Airbyte HTTP source — BTS On-Time Performance monthly ZIP
+#
+# Drives the `bts_monthly_raw` Dagster asset (PIPELINE.md §Ingestion/Batch).
+# The runner `run_bts_sync.py` reads this file, downloads the ZIP, unzips, and
+# lands raw CSV + sidecar manifest at:
+#   s3://${S3_RAW_BUCKET}/bts/ds=YYYY-MM-01/raw.csv
+#   s3://${S3_RAW_BUCKET}/bts/ds=YYYY-MM-01/_manifest.json
+#
+# YAML is the declarative source spec; the same shape is loadable into Airbyte
+# OSS as a low-code HTTP source if you wire Airbyte instead of the runner.
+
+version: "0.1.0"
+definitionId: flightpulse-bts-on-time-performance
+name: BTS On-Time Reporting Carrier On-Time Performance
+documentationUrl: https://www.transtats.bts.gov/Tables.asp?DB_ID=120
+
+# URL pattern: append _<YYYY>_<MM>.zip to base.
+url:
+  base: ${BTS_DOWNLOAD_URL}
+  filename_pattern: "_{year}_{month}.zip"
+
+http:
+  method: GET
+  headers:
+    User-Agent: flightpulse/1.0 (+https://github.com/flightpulse)
+    Accept: application/zip
+  connect_timeout_seconds: 10
+  read_timeout_seconds: 300
+
+retry:
+  max_attempts: 3
+  backoff_seconds: [60, 300, 1800]
+  retry_on_status: [429, 500, 502, 503, 504]
+
+unzip:
+  enabled: true
+  member_glob: "*.csv"
+  rename_to: raw.csv
+
+destination:
+  type: s3
+  bucket: ${S3_RAW_BUCKET}
+  prefix: bts
+  partition_by: ds
+  partition_format: ds=%Y-%m-01
+  manifest:
+    enabled: true
+    path: _manifest.json
+    fields: [source_url, downloaded_at, content_length, sha256, member_filename]
+
+idempotency:
+  strategy: overwrite
+  short_circuit_on_unchanged_sha: true
+
+natural_key:
+  - flight_date
+  - reporting_airline
+  - flight_number_reporting_airline
+  - origin
+  - crs_dep_time
