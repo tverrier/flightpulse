@@ -1,0 +1,22 @@
+# Copy to terraform.tfvars and fill in. terraform.tfvars is gitignored.
+
+aws_region   = "us-east-1"
+environment  = "dev"
+owner_email  = "trentverrier7@gmail.com"
+
+# Snowflake (ACCOUNTADMIN creds used only by terraform; rotate after apply)
+snowflake_account        = "xy12345.us-east-1"
+snowflake_region         = "AWS_US_EAST_1"
+snowflake_admin_user     = "TF_ADMIN"
+snowflake_admin_password = "rotate-me"
+snowflake_dbt_password   = "rotate-me-too"
+snowflake_credit_quota_monthly = 50
+
+# Slack alerts
+slack_webhook_url = "https://hooks.slack.com/services/T000/B000/xxx"
+
+# Cognito callbacks (CloudFront domain is added automatically post-apply)
+cognito_callback_urls = [
+  "https://localhost:8501/oauth2/callback",
+  "https://localhost:8000/oauth2/callback",
+]
