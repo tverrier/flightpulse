@@ -30,7 +30,7 @@ with raw as (
         try_to_number(position_source)::int    as position_source,
         ds                                      as ds,
         try_to_number(hr)                      as hr,
-        _metadata$file_last_modified           as bronze_loaded_at
+        metadata$file_last_modified            as bronze_loaded_at
     from {{ src }}
     where icao24 is not null
 )

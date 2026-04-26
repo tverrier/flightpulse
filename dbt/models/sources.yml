@@ -19,7 +19,7 @@ sources:
     tables:
       - name: bts_raw
         description: "BTS On-Time Performance monthly CSV. One row per scheduled flight."
-        loaded_at_field: "to_timestamp_ntz(_metadata$file_last_modified)"
+        loaded_at_field: "METADATA$FILE_LAST_MODIFIED"
         external:
           location: "s3://{{ env_var('S3_RAW_BUCKET', 'flightpulse-raw') }}/bts/"
           partitions:
@@ -50,7 +50,7 @@ sources:
 
       - name: opensky_raw
         description: "OpenSky state vectors from the streaming sink (1-min Parquet rolls)."
-        loaded_at_field: "to_timestamp_ntz(_metadata$file_last_modified)"
+        loaded_at_field: "METADATA$FILE_LAST_MODIFIED"
         external:
           location: "s3://{{ env_var('S3_RAW_BUCKET', 'flightpulse-raw') }}/opensky/"
           partitions:
