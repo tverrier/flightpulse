@@ -1,0 +1,7 @@
+# Dagster workspace — points the webserver/daemon at the package's Definitions.
+# Loaded by `make dagster-up` (which also sets DAGSTER_HOME).
+load_from:
+  - python_module:
+      module_name: dagster_project
+      working_directory: .
+      location_name: flightpulse
