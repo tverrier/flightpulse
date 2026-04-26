@@ -75,36 +75,62 @@ resource "snowflake_schema" "obs_drift" {
 }
 
 # ----- Grants --------------------------------------------------------------
-resource "snowflake_database_grant" "transformer_prod_usage" {
-  database_name = snowflake_database.prod.name
-  privilege     = "USAGE"
-  roles         = [snowflake_role.transformer.name]
-}
-resource "snowflake_database_grant" "transformer_prod_all" {
-  database_name = snowflake_database.prod.name
-  privilege     = "ALL"
-  roles         = [snowflake_role.transformer.name]
-}
-resource "snowflake_database_grant" "transformer_dev_all" {
-  database_name = snowflake_database.dev.name
-  privilege     = "ALL"
-  roles         = [snowflake_role.transformer.name]
-}
-resource "snowflake_database_grant" "transformer_obs_all" {
-  database_name = snowflake_database.obs.name
-  privilege     = "ALL"
-  roles         = [snowflake_role.transformer.name]
-}
-resource "snowflake_database_grant" "ro_prod_usage" {
-  database_name = snowflake_database.prod.name
-  privilege     = "USAGE"
-  roles         = [snowflake_role.dashboard_ro.name]
+# Use snowflake_grant_privileges_to_account_role (the supported resource as of
+# provider 0.94+; the older snowflake_database_grant / warehouse_grant /
+# role_grants are deprecated and removed in newer versions).
+
+resource "snowflake_grant_privileges_to_account_role" "transformer_prod" {
+  account_role_name = snowflake_role.transformer.name
+  privileges        = ["USAGE", "MONITOR", "CREATE SCHEMA"]
+  on_account_object {
+    object_type = "DATABASE"
+    object_name = snowflake_database.prod.name
+  }
 }
 
-resource "snowflake_warehouse_grant" "transformer_wh" {
-  warehouse_name = snowflake_warehouse.xs.name
-  privilege      = "USAGE"
-  roles          = [snowflake_role.transformer.name, snowflake_role.dashboard_ro.name]
+resource "snowflake_grant_privileges_to_account_role" "transformer_dev" {
+  account_role_name = snowflake_role.transformer.name
+  privileges        = ["USAGE", "MONITOR", "CREATE SCHEMA"]
+  on_account_object {
+    object_type = "DATABASE"
+    object_name = snowflake_database.dev.name
+  }
+}
+
+resource "snowflake_grant_privileges_to_account_role" "transformer_obs" {
+  account_role_name = snowflake_role.transformer.name
+  privileges        = ["USAGE", "MONITOR", "CREATE SCHEMA"]
+  on_account_object {
+    object_type = "DATABASE"
+    object_name = snowflake_database.obs.name
+  }
+}
+
+resource "snowflake_grant_privileges_to_account_role" "ro_prod" {
+  account_role_name = snowflake_role.dashboard_ro.name
+  privileges        = ["USAGE"]
+  on_account_object {
+    object_type = "DATABASE"
+    object_name = snowflake_database.prod.name
+  }
+}
+
+resource "snowflake_grant_privileges_to_account_role" "transformer_wh" {
+  account_role_name = snowflake_role.transformer.name
+  privileges        = ["USAGE", "OPERATE"]
+  on_account_object {
+    object_type = "WAREHOUSE"
+    object_name = snowflake_warehouse.xs.name
+  }
+}
+
+resource "snowflake_grant_privileges_to_account_role" "ro_wh" {
+  account_role_name = snowflake_role.dashboard_ro.name
+  privileges        = ["USAGE"]
+  on_account_object {
+    object_type = "WAREHOUSE"
+    object_name = snowflake_warehouse.xs.name
+  }
 }
 
 # ----- User: svc_dbt -------------------------------------------------------
@@ -116,9 +142,9 @@ resource "snowflake_user" "svc_dbt" {
   must_change_password = false
 }
 
-resource "snowflake_role_grants" "svc_dbt" {
+resource "snowflake_grant_account_role" "svc_dbt" {
   role_name = snowflake_role.transformer.name
-  users     = [snowflake_user.svc_dbt.name]
+  user_name = snowflake_user.svc_dbt.name
 }
 
 # ----- Resource monitor ----------------------------------------------------
