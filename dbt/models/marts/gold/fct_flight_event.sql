@@ -32,6 +32,8 @@ select
     src.carrier_code                               as carrier_key,
     src.origin_iata                                as origin_airport_key,
     src.dest_iata                                  as dest_airport_key,
+    orig.airport_sk                                as origin_airport_sk,
+    dest.airport_sk                                as dest_airport_sk,
     src.tail_number                                as aircraft_key,
     src.flight_number,
     src.scheduled_dep_ts,

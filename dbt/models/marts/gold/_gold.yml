@@ -37,6 +37,10 @@ models:
               field: airport_key
               config:
                 where: "dest_airport_key is not null"
+      - name: origin_airport_sk
+        description: "SCD-2 surrogate key for the origin airport at flight time."
+      - name: dest_airport_sk
+        description: "SCD-2 surrogate key for the destination airport at flight time."
       - name: cancellation_code
         tests:
           - accepted_values:

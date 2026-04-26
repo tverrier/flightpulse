@@ -35,20 +35,7 @@
     {%- set log_table = var('drift_log_table') -%}
     {%- set fqn = log_db ~ '.' ~ log_schema ~ '.' ~ log_table -%}
 
-    {%- set ddl %}
-        create schema if not exists {{ log_db }}.{{ log_schema }};
-        create table if not exists {{ fqn }} (
-            detected_at  timestamp_ntz default current_timestamp(),
-            source_name  string,
-            table_name   string,
-            kind         string,           -- added | removed | run_marker
-            column_name  string,
-            reviewed_at  timestamp_ntz,
-            reviewed_by  string,
-            notes        string
-        );
-    {%- endset %}
-    {% do run_query(ddl) %}
+    {% do ensure_drift_log_table() %}
 
     {%- set rows = [] -%}
     {%- do rows.append("(current_timestamp(), '" ~ source_name ~ "', '" ~ table_name ~ "', 'run_marker', null, null, null, null)") -%}

@@ -57,7 +57,7 @@ with_ts as (
                         mod(crs_dep_time_hhmm, 100) + 60 * floor(crs_dep_time_hhmm / 100),
                         to_timestamp_ntz(flight_date)
                     )
-                  )
+                  )::timestamp_tz
         end as scheduled_dep_ts,
 
         case when crs_arr_time_hhmm is not null
@@ -69,7 +69,7 @@ with_ts as (
                         mod(crs_arr_time_hhmm, 100) + 60 * floor(crs_arr_time_hhmm / 100),
                         to_timestamp_ntz(flight_date)
                     )
-                  )
+                  )::timestamp_tz
         end as scheduled_arr_ts,
 
         case when dep_time_hhmm is not null and not cancelled_flag
@@ -81,7 +81,7 @@ with_ts as (
                         mod(dep_time_hhmm, 100) + 60 * floor(dep_time_hhmm / 100),
                         to_timestamp_ntz(flight_date)
                     )
-                  )
+                  )::timestamp_tz
         end as actual_dep_ts,
 
         case when arr_time_hhmm is not null and not cancelled_flag
@@ -93,7 +93,7 @@ with_ts as (
                         mod(arr_time_hhmm, 100) + 60 * floor(arr_time_hhmm / 100),
                         to_timestamp_ntz(flight_date)
                     )
-                  )
+                  )::timestamp_tz
         end as actual_arr_ts
     from joined
 )

@@ -17,16 +17,6 @@ with bts_tails as (
     from {{ ref('stg_bts__flights') }}
     where tail_number is not null
     group by 1
-),
-
-opensky_icao as (
-    -- map tail to icao24 via callsign heuristic (carrier+flight_number matches)
-    -- NOTE: best-effort; superseded by FAA registry join in prod.
-    select distinct
-        icao24,
-        callsign
-    from {{ ref('stg_opensky__states') }}
-    where callsign is not null
 )
 
 select

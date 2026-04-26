@@ -36,7 +36,7 @@ with raw as (
             {{ get_column_or_null('DivAirportLandings',    source_relation=src) }}
         ) as div_airport_landings,
         ds as flight_date_partition,
-        _metadata$file_last_modified as bronze_loaded_at
+        metadata$file_last_modified as bronze_loaded_at
     from {{ src }}
     where ds is not null
 ),
