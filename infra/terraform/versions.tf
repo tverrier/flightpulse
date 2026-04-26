@@ -8,7 +8,10 @@ terraform {
     }
     snowflake = {
       source  = "Snowflake-Labs/snowflake"
-      version = "~> 0.94"
+      # 0.96+ exposes snowflake_external_volume, snowflake_catalog_integration,
+      # and the new snowflake_grant_privileges_to_account_role resource that
+      # supersedes the deprecated *_grant primitives.
+      version = "~> 0.96"
     }
     random = {
       source  = "hashicorp/random"
@@ -17,6 +20,10 @@ terraform {
     tls = {
       source  = "hashicorp/tls"
       version = "~> 4.0"
+    }
+    archive = {
+      source  = "hashicorp/archive"
+      version = "~> 2.4"
     }
   }
 

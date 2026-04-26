@@ -42,7 +42,7 @@ from dagster_project.constants import (
     S3_OPENSKY_PREFIX,
     S3_RAW_BUCKET,
 )
-from dagster_project.resources import SlackAlertResource
+from dagster_project.resources import SlackAlertResource, SnowflakeResource
 
 # -----------------------------------------------------------------------------
 # Job triggered by the opensky-freshness sensor — narrow selector so we only
@@ -194,8 +194,99 @@ def dagster_failure_to_slack_sensor(
     context.log.info("posted failure alert to slack for run %s", run_id)
 
 
+# -----------------------------------------------------------------------------
+# Elementary alerts → Slack.
+#
+# elementary's on-run-end hooks (configured in dbt_project.yml) write rows to
+# FLIGHTPULSE_OBS.elementary.alerts every time dbt runs. This sensor polls
+# that table every 5 min, forwards new rows to Slack via SlackAlertResource,
+# and advances its cursor to the max(detected_at) it has already posted so a
+# restart never double-posts.
+#
+# Severity routing:
+#   * detected_at within last 24 h + alert_class in ('test','model_error') →
+#     :rotating_light: (paged via #flightpulse-alerts).
+#   * everything else                                                       →
+#     :warning: (informational, same channel).
+# -----------------------------------------------------------------------------
+_ELEMENTARY_ALERTS_QUERY = """
+select
+    alert_id,
+    detected_at,
+    alert_class,
+    model_unique_id,
+    test_name,
+    status,
+    alert_description,
+    tags
+from FLIGHTPULSE_OBS.elementary.alerts
+where detected_at > %s
+order by detected_at asc
+limit 100
+""".strip()
+
+
+@sensor(
+    name="elementary_alerts_sensor",
+    minimum_interval_seconds=60 * 5,
+    default_status=DefaultSensorStatus.STOPPED,
+    description=(
+        "Forwards new rows in FLIGHTPULSE_OBS.elementary.alerts to "
+        "#flightpulse-alerts. Cursor = max(detected_at) already posted."
+    ),
+)
+def elementary_alerts_sensor(
+    context: SensorEvaluationContext,
+    snowflake: SnowflakeResource,
+    slack: SlackAlertResource,
+) -> SkipReason | SensorResult:
+    # Cursor format: ISO-8601 UTC. Default to "1 hour ago" so first run is
+    # bounded — we don't want a fresh sensor to flood Slack with year-old rows.
+    if context.cursor:
+        since = context.cursor
+    else:
+        since = (dt.datetime.now(dt.timezone.utc) - dt.timedelta(hours=1)).isoformat()
+
+    try:
+        # query_one returns a single row; we need many → use _connect directly.
+        with snowflake._connect() as conn, conn.cursor() as cur:
+            cur.execute(_ELEMENTARY_ALERTS_QUERY, (since,))
+            rows = cur.fetchall() or []
+    except Exception as exc:  # pragma: no cover — defensive: missing schema on cold install
+        context.log.warning("elementary_alerts_sensor query failed: %s", exc)
+        return SkipReason(f"elementary alerts query failed: {exc}")
+
+    if not rows:
+        return SkipReason(f"no new elementary alerts since {since}")
+
+    posted = 0
+    max_detected: dt.datetime | None = None
+    for row in rows:
+        alert_id, detected_at, alert_class, model_uid, test_name, status, desc, tags = row
+        if isinstance(detected_at, dt.datetime) and (max_detected is None or detected_at > max_detected):
+            max_detected = detected_at
+
+        is_critical = (alert_class in ("test", "model_error")) and (
+            isinstance(tags, str) and "critical" in tags.lower()
+        )
+        icon = ":rotating_light:" if is_critical else ":warning:"
+        target = test_name or model_uid or "<unknown>"
+        slack.post(
+            f"{icon} *elementary* {alert_class}/{status} — `{target}`\n"
+            f"{(desc or '')[:1500]}\n"
+            f"_alert_id={alert_id} detected_at={detected_at}_"
+        )
+        posted += 1
+
+    if max_detected is not None:
+        context.update_cursor(max_detected.isoformat())
+    context.log.info("elementary_alerts_sensor posted %d alerts", posted)
+    return SensorResult(run_requests=[])
+
+
 ALL_SENSORS: list[Any] = [
     opensky_producer_health_sensor,
     silver_aircraft_state_freshness_sensor,
     dagster_failure_to_slack_sensor,
+    elementary_alerts_sensor,
 ]
