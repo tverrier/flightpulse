@@ -1,0 +1,39 @@
+# Dagster instance configuration — consumed when DAGSTER_HOME points at this
+# directory's sibling `dagster_home/` (created by `make dagster-up`).
+#
+# Only non-default settings live here. The local SQLite stores are fine for
+# dev; in Dagster Cloud the deployment overrides storage automatically.
+
+run_coordinator:
+  module: dagster.core.run_coordinator
+  class: QueuedRunCoordinator
+  config:
+    max_concurrent_runs: 8
+    tag_concurrency_limits:
+      - key: "dagster/backfill"
+        limit: 2
+      - key: "warehouse"
+        value: "snowflake"
+        limit: 4
+
+run_launcher:
+  module: dagster.core.launcher
+  class: DefaultRunLauncher
+
+run_retries:
+  enabled: true
+  max_retries: 0  # per-asset retry policies are authoritative; do not double-retry
+
+telemetry:
+  enabled: false
+
+# Concurrency caps for asset-level long-running ops (e.g. dbt build) so we
+# don't trample Snowflake.
+concurrency:
+  default_op_concurrency_limit: 8
+
+run_monitoring:
+  enabled: true
+  start_timeout_seconds: 300
+  cancel_timeout_seconds: 180
+  max_runtime_seconds: 7200  # 2h hard ceiling — anything longer is a bug

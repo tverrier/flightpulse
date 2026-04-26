@@ -1,0 +1,16 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "flightpulse-dagster"
+version = "1.0.0"
+description = "FlightPulse Dagster orchestration package — assets, jobs, schedules, sensors per PIPELINE.md."
+requires-python = ">=3.11"
+
+[tool.setuptools.packages.find]
+include = ["dagster_project*"]
+
+[tool.dagster]
+module_name = "dagster_project"
+code_location_name = "flightpulse"
