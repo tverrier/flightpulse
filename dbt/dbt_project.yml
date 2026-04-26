@@ -17,7 +17,23 @@ clean-targets:
 
 require-dbt-version: [">=1.8.0", "<2.0.0"]
 
-# Variables consumed by macros and incremental models.
+# Ensure the drift log exists before any test (incl. the singular drift test)
+# touches it, so a clean install does not error with "table does not exist".
+on-run-start:
+  - "{{ ensure_drift_log_table() }}"
+
+# elementary observability — every dbt invocation appends run results, test
+# results, and model timings to FLIGHTPULSE_OBS.elementary.* via the package's
+# log_* macros. The Dagster `elementary_alerts_sensor` reads elementary.alerts
+# and forwards to Slack; the `edr send-report` step in dbt-prod.yml renders an
+# HTML observability report.
+on-run-end:
+  - "{{ elementary.log_test_results(results) }}"
+  - "{{ elementary.log_model_results(results) }}"
+  - "{{ elementary.log_run_results(results) }}"
+  - "{{ elementary.log_invocation(invocation_args_dict) }}"
+
+# Variables consumed by macros, incremental models, and the elementary package.
 vars:
   # Backfill window: incrementals re-process this many days back from
   # max(loaded_at). Set to 35 to cover BTS late corrections.
@@ -37,6 +53,19 @@ vars:
   iceberg_external_volume: "EV_FLIGHTPULSE_SILVER"
   iceberg_base_location:   "iceberg/silver"
   iceberg_catalog:         "SNOWFLAKE"
+
+  # ---------------------------------------------------------------------------
+  # elementary alert routing — driven by env vars so secrets stay out of git.
+  # `edr monitor` reads these via the `elementary` profile (see
+  # profiles.yml.example) and posts to Slack. Tag-based severity routing keeps
+  # critical-tagged failures separate from informational ones.
+  # ---------------------------------------------------------------------------
+  elementary:
+    target_schema: elementary
+  slack_channel: "{{ env_var('ELEMENTARY_SLACK_CHANNEL', 'flightpulse-alerts') }}"
+  slack_token:   "{{ env_var('ELEMENTARY_SLACK_TOKEN', '') }}"
+  alerts_schema: "elementary"
+  alert_on_test_warnings: true
 
 # -----------------------------------------------------------------------------
 # Model layer config — silver lives in Snowflake-managed Iceberg, gold lives
@@ -76,6 +105,13 @@ models:
         +materialized: incremental
         +incremental_strategy: merge
         +tags: ["gold", "critical"]
+
+  # elementary's own models land in FLIGHTPULSE_OBS.elementary so its tables
+  # are colocated with our drift log. The package builds dim_dbt__models,
+  # alerts, etc.; we never reference them from gold.
+  elementary:
+    +database: "{{ env_var('DBT_OBS_DATABASE', 'FLIGHTPULSE_OBS') }}"
+    +schema: elementary
 
 snapshots:
   flightpulse:

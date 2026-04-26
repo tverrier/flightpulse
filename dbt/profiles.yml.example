@@ -41,3 +41,21 @@ flightpulse:
       schema: "ci_pr_{{ env_var('GITHUB_PR_NUMBER', 'local') }}"
       threads: 4
       query_tag: "flightpulse-ci-pr{{ env_var('GITHUB_PR_NUMBER', 'local') }}"
+
+# `edr` (elementary CLI) reads this profile separately when sending alerts /
+# rendering the report. Points at FLIGHTPULSE_OBS.elementary so it sees the
+# tables written by the on-run-end hooks above.
+elementary:
+  target: prod
+  outputs:
+    prod:
+      type: snowflake
+      account: "{{ env_var('SNOWFLAKE_ACCOUNT') }}"
+      user: "{{ env_var('SNOWFLAKE_USER') }}"
+      password: "{{ env_var('SNOWFLAKE_PASSWORD') }}"
+      role: "{{ env_var('SNOWFLAKE_ROLE', 'RL_FLIGHTPULSE_TRANSFORMER') }}"
+      warehouse: "{{ env_var('SNOWFLAKE_WAREHOUSE', 'WH_FLIGHTPULSE_XS') }}"
+      database: "{{ env_var('DBT_OBS_DATABASE', 'FLIGHTPULSE_OBS') }}"
+      schema: elementary
+      threads: 4
+      query_tag: flightpulse-edr
