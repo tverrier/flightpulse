@@ -139,4 +139,6 @@ tmp/
 serving/api/models/*.pkl
 serving/api/models/*.txt
 serving/api/models/*.bin
+serving/api/models/*.joblib
+serving/api/models/*.json
 !serving/api/models/.gitkeep

@@ -91,9 +91,17 @@ dashboard: ## Launch Streamlit dashboard at http://localhost:8501
 	  --server.port 8501 --server.address 0.0.0.0
 
 .PHONY: api
-api: ## Launch FastAPI /predict at http://localhost:8000/docs
+api: train-model ## Launch FastAPI /predict at http://localhost:8000/docs
 	$(VENV_BIN)/uvicorn serving.api.main:app \
 	  --host 0.0.0.0 --port 8000 --reload
+
+.PHONY: train-model
+train-model: ## Train + persist serving/api/models/arr_delay_lgbm.joblib (idempotent)
+	@if [ -f serving/api/models/arr_delay_lgbm.joblib ]; then \
+	  echo "model artifact present — skipping retrain (rm to force)."; \
+	else \
+	  $(PYTHON_VENV) -m serving.api.models.train; \
+	fi
 
 # -----------------------------------------------------------------------------
 # Snowflake helpers
