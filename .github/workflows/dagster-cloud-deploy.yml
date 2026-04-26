@@ -1,0 +1,79 @@
+# =============================================================================
+# Dagster Cloud deploy — pushes the `flightpulse` code location to the
+# `flightpulse-prod` deployment on every merge to main. Uses the official
+# dagster-cloud-action.
+#
+# Per SETUP.md §6 + §8:
+#   * DAGSTER_CLOUD_API_TOKEN — agent + management token (Dagster Cloud UI)
+#   * DAGSTER_CLOUD_URL       — e.g. https://flightpulse.dagster.cloud
+#   * DAGSTER_CLOUD_ORGANIZATION — short org slug
+#
+# Branch deployments (preview env per PR) are enabled by also running this
+# workflow on `pull_request` events with `--deployment branch`.
+# =============================================================================
+name: dagster-cloud-deploy
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "orchestration/**"
+      - "ingestion/**"
+      - "dbt/**"
+      - "dagster_cloud.yaml"
+      - ".github/workflows/dagster-cloud-deploy.yml"
+  pull_request:
+    branches: [main]
+    paths:
+      - "orchestration/**"
+      - "dagster_cloud.yaml"
+
+concurrency:
+  group: dagster-cloud-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: write
+    env:
+      DAGSTER_CLOUD_URL: ${{ secrets.DAGSTER_CLOUD_URL }}
+      DAGSTER_CLOUD_API_TOKEN: ${{ secrets.DAGSTER_CLOUD_API_TOKEN }}
+      DAGSTER_CLOUD_ORGANIZATION: ${{ secrets.DAGSTER_CLOUD_ORGANIZATION }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Pre-run checks
+        uses: dagster-io/dagster-cloud-action/actions/utils/prerun@v0.1
+      - name: Build + deploy
+        if: github.event_name == 'push'
+        uses: dagster-io/dagster-cloud-action/actions/serverless_branch_deployments@v0.1
+        with:
+          dagster_cloud_url: ${{ secrets.DAGSTER_CLOUD_URL }}
+          dagster_cloud_api_token: ${{ secrets.DAGSTER_CLOUD_API_TOKEN }}
+          location: |
+            {
+              "name": "flightpulse",
+              "directory": "orchestration/dagster_project",
+              "build_folder": ".",
+              "registry": "${{ secrets.DAGSTER_CLOUD_IMAGE_REGISTRY }}",
+              "code_source": { "module_name": "dagster_project" }
+            }
+          deployment: prod
+      - name: Branch deployment (PR preview)
+        if: github.event_name == 'pull_request'
+        uses: dagster-io/dagster-cloud-action/actions/serverless_branch_deployments@v0.1
+        with:
+          dagster_cloud_url: ${{ secrets.DAGSTER_CLOUD_URL }}
+          dagster_cloud_api_token: ${{ secrets.DAGSTER_CLOUD_API_TOKEN }}
+          location: |
+            {
+              "name": "flightpulse",
+              "directory": "orchestration/dagster_project",
+              "build_folder": ".",
+              "registry": "${{ secrets.DAGSTER_CLOUD_IMAGE_REGISTRY }}",
+              "code_source": { "module_name": "dagster_project" }
+            }

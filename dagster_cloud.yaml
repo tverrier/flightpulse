@@ -1,0 +1,37 @@
+# =============================================================================
+# Dagster Cloud / Dagster+ deployment manifest.
+# Referenced by `dagster-cloud serverless deploy` (and the Hybrid agent) to
+# build + push the FlightPulse code location into the `flightpulse-prod`
+# deployment configured in SETUP.md §6.
+#
+# One code location for now — `flightpulse` — pointing at the Dagster project
+# under orchestration/dagster_project. The Dockerfile mirrors the local
+# `make dagster-up` command but baked into a deployable image.
+# =============================================================================
+locations:
+  - location_name: flightpulse
+    code_source:
+      module_name: dagster_project
+    working_directory: orchestration/dagster_project
+    build:
+      directory: orchestration/dagster_project
+      registry: ${DAGSTER_CLOUD_IMAGE_REGISTRY}
+    container_context:
+      k8s:
+        env_config_maps:
+          - flightpulse-env
+        env_secrets:
+          - flightpulse-secrets
+        # Resource hints; the Hybrid agent honors these on EKS/ECS.
+        resources:
+          requests:
+            cpu: "500m"
+            memory: "1Gi"
+          limits:
+            cpu: "2"
+            memory: "4Gi"
+        # Mount the dbt profiles the same way `make dagster-up` does.
+        volume_mounts:
+          - name: dbt-profiles
+            mount_path: /opt/dagster/app/dbt
+            sub_path: ""

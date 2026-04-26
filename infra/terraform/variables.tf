@@ -83,6 +83,25 @@ variable "cognito_callback_urls" {
   default = ["https://localhost:8501/oauth2/callback", "https://localhost:8000/oauth2/callback"]
 }
 
+# ----- Dagster Cloud --------------------------------------------------------
+variable "dagster_cloud_agent_token" {
+  type        = string
+  description = "Token used by the Dagster Cloud Hybrid agent (per SETUP.md §6). Stored in Secrets Manager."
+  sensitive   = true
+  default     = ""
+}
+
+variable "dagster_cloud_url" {
+  type        = string
+  description = "Dagster Cloud organization URL, e.g. https://flightpulse.dagster.cloud"
+  default     = ""
+}
+
+variable "dagster_cloud_deployment" {
+  type    = string
+  default = "prod"
+}
+
 # ----- Tagging --------------------------------------------------------------
 variable "extra_tags" {
   type    = map(string)
