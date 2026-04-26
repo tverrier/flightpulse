@@ -1,0 +1,100 @@
+# =============================================================================
+# dbt-prod — deploys dbt models to FLIGHTPULSE_PROD on every push to main.
+#
+# Sequence:
+#   1. dbt deps + parse        — fail fast on Jinja errors.
+#   2. dbt build               — silver + gold (incremental + merge).
+#   3. dbt test (critical)     — block on critical-tagged failures.
+#   4. edr send-report         — render elementary observability report and
+#                                upload as a workflow artifact + push to S3.
+#   5. edr monitor             — fan elementary alerts to Slack (covers any
+#                                test failures from non-critical tags so they
+#                                are still visible).
+#
+# This complements the schedule path (Dagster Cloud cron) — running on merge
+# guarantees prod converges on every code change without waiting for the next
+# scheduled run.
+# =============================================================================
+name: dbt-prod
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "dbt/**"
+      - ".github/workflows/dbt-prod.yml"
+  workflow_dispatch: {}
+
+concurrency:
+  group: dbt-prod
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    env:
+      DBT_PROFILES_DIR: ${{ github.workspace }}/dbt
+      DBT_TARGET: prod
+      SNOWFLAKE_ACCOUNT: ${{ secrets.SNOWFLAKE_ACCOUNT }}
+      SNOWFLAKE_USER: ${{ secrets.SNOWFLAKE_DBT_USER }}
+      SNOWFLAKE_PASSWORD: ${{ secrets.SNOWFLAKE_DBT_PASSWORD }}
+      SNOWFLAKE_ROLE: RL_FLIGHTPULSE_TRANSFORMER
+      SNOWFLAKE_WAREHOUSE: WH_FLIGHTPULSE_XS
+      SNOWFLAKE_DATABASE: FLIGHTPULSE_PROD
+      DBT_OBS_DATABASE: FLIGHTPULSE_OBS
+      ELEMENTARY_SLACK_TOKEN: ${{ secrets.ELEMENTARY_SLACK_TOKEN }}
+      ELEMENTARY_SLACK_CHANNEL: flightpulse-alerts
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+      - name: Install
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt elementary-data[snowflake]==0.16.1
+      - name: Render profiles.yml from example
+        run: cp dbt/profiles.yml.example dbt/profiles.yml
+      - name: dbt deps
+        working-directory: dbt
+        run: dbt deps
+      - name: dbt build (silver + gold)
+        working-directory: dbt
+        run: dbt build --target prod --select tag:silver tag:gold
+      - name: dbt test (critical)
+        working-directory: dbt
+        run: dbt test --target prod --select tag:critical
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_DBT_REPORT_ROLE_ARN }}
+          aws-region: us-east-1
+      - name: edr send-report
+        working-directory: dbt
+        run: |
+          edr send-report \
+            --profiles-dir "$DBT_PROFILES_DIR" \
+            --aws-profile-name default \
+            --s3-bucket-name "${{ secrets.ELEMENTARY_REPORT_S3_BUCKET }}" \
+            --update-bucket-website true
+      - name: Upload dbt artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: dbt-target-${{ github.run_id }}
+          path: |
+            dbt/target/manifest.json
+            dbt/target/run_results.json
+          retention-days: 30
+      - name: edr monitor (forward to Slack)
+        if: always()
+        working-directory: dbt
+        run: |
+          edr monitor \
+            --profiles-dir "$DBT_PROFILES_DIR" \
+            --slack-token "$ELEMENTARY_SLACK_TOKEN" \
+            --slack-channel-name "$ELEMENTARY_SLACK_CHANNEL"

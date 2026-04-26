@@ -1,0 +1,146 @@
+# =============================================================================
+# CI — runs on every push + PR.
+#   ruff + mypy → unit/integration pytest → dbt parse → critical-tagged dbt
+#   tests against an isolated CI Snowflake schema (ci_pr_<NUMBER>).
+#
+# The CI Snowflake target uses the `ci` output in dbt/profiles.yml.example;
+# its schema is namespaced per PR so concurrent runs never collide.
+# =============================================================================
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  PYTHON_VERSION: "3.11"
+  DBT_PROFILES_DIR: ${{ github.workspace }}/dbt
+  DBT_TARGET: ci
+
+jobs:
+  # ---------------------------------------------------------------------------
+  # Lint + types — fast feedback, no external creds required.
+  # ---------------------------------------------------------------------------
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: pip
+      - name: Install
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+      - name: Ruff
+        run: ruff check .
+      - name: Mypy
+        run: mypy --ignore-missing-imports ingestion serving orchestration
+
+  # ---------------------------------------------------------------------------
+  # Unit + integration pytest. Integration tests that need AWS use moto; tests
+  # that need Snowflake use the SnowflakeResource stubbing pattern.
+  # ---------------------------------------------------------------------------
+  pytest:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: pip
+      - name: Install
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+      - name: Pytest
+        run: pytest -q tests/
+
+  # ---------------------------------------------------------------------------
+  # dbt parse — catches Jinja errors + missing refs without hitting Snowflake.
+  # Always runs.
+  # ---------------------------------------------------------------------------
+  dbt-parse:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: pip
+      - name: Install
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+      - name: Render profiles.yml from example
+        run: cp dbt/profiles.yml.example dbt/profiles.yml
+      - name: dbt deps
+        working-directory: dbt
+        run: dbt deps
+      - name: dbt parse
+        working-directory: dbt
+        env:
+          # Stub creds so parse can resolve env_var() calls without a warehouse.
+          SNOWFLAKE_ACCOUNT: parse-only
+          SNOWFLAKE_USER: parse-only
+          SNOWFLAKE_PASSWORD: parse-only
+          SNOWFLAKE_ROLE: parse-only
+          SNOWFLAKE_WAREHOUSE: parse-only
+          SNOWFLAKE_DATABASE_DEV: FLIGHTPULSE_DEV
+          SNOWFLAKE_DATABASE: FLIGHTPULSE_PROD
+          GITHUB_PR_NUMBER: ${{ github.event.pull_request.number || 'main' }}
+        run: dbt parse --target ci
+
+  # ---------------------------------------------------------------------------
+  # dbt test (critical) — only runs when Snowflake creds are available, i.e.
+  # for PRs from the same repo (not forks) and pushes to main. Forks fall back
+  # to lint/pytest/dbt-parse only.
+  # ---------------------------------------------------------------------------
+  dbt-critical:
+    runs-on: ubuntu-latest
+    needs: [dbt-parse]
+    if: ${{ github.event.pull_request.head.repo.full_name == github.repository || github.event_name == 'push' }}
+    env:
+      SNOWFLAKE_ACCOUNT: ${{ secrets.SNOWFLAKE_ACCOUNT }}
+      SNOWFLAKE_USER: ${{ secrets.SNOWFLAKE_CI_USER }}
+      SNOWFLAKE_PASSWORD: ${{ secrets.SNOWFLAKE_CI_PASSWORD }}
+      SNOWFLAKE_ROLE: RL_FLIGHTPULSE_TRANSFORMER
+      SNOWFLAKE_WAREHOUSE: WH_FLIGHTPULSE_XS
+      SNOWFLAKE_DATABASE_DEV: FLIGHTPULSE_DEV
+      SNOWFLAKE_DATABASE: FLIGHTPULSE_DEV
+      DBT_OBS_DATABASE: FLIGHTPULSE_OBS
+      GITHUB_PR_NUMBER: ${{ github.event.pull_request.number || 'main' }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: pip
+      - name: Install
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+      - name: Render profiles.yml from example
+        run: cp dbt/profiles.yml.example dbt/profiles.yml
+      - name: dbt deps
+        working-directory: dbt
+        run: dbt deps
+      - name: dbt build (sources + critical models)
+        working-directory: dbt
+        run: dbt build --target ci --select tag:critical
+      - name: dbt test critical
+        working-directory: dbt
+        run: dbt test --target ci --select tag:critical
+      - name: Drop CI schema on success
+        if: success()
+        working-directory: dbt
+        run: |
+          dbt run-operation drop_ci_schema \
+            --args "{schema: ci_pr_${GITHUB_PR_NUMBER}}" || true

@@ -1,0 +1,92 @@
+# =============================================================================
+# Terraform CI — fmt + validate + plan on PR; manual `apply` only via the
+# Actions UI (workflow_dispatch). Never auto-applies on merge to keep infra
+# changes gated behind a human.
+#
+# Bootstrap stack (infra/terraform/bootstrap) is excluded — its state is local
+# and it should be applied once by hand on a fresh AWS account.
+# =============================================================================
+name: terraform
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - "infra/terraform/**"
+      - "infra/lambda/**"
+      - ".github/workflows/terraform.yml"
+  workflow_dispatch:
+    inputs:
+      action:
+        description: "plan | apply"
+        required: true
+        default: "plan"
+
+permissions:
+  contents: read
+  pull-requests: write
+  id-token: write   # OIDC for AWS
+
+defaults:
+  run:
+    working-directory: infra/terraform
+
+jobs:
+  terraform:
+    runs-on: ubuntu-latest
+    env:
+      TF_IN_AUTOMATION: "true"
+      TF_INPUT: "0"
+      TF_VAR_snowflake_account: ${{ secrets.SNOWFLAKE_ACCOUNT }}
+      TF_VAR_snowflake_admin_user: ${{ secrets.SNOWFLAKE_TF_USER }}
+      TF_VAR_snowflake_admin_password: ${{ secrets.SNOWFLAKE_TF_PASSWORD }}
+      TF_VAR_snowflake_dbt_password: ${{ secrets.SNOWFLAKE_DBT_PASSWORD }}
+      TF_VAR_slack_webhook_url: ${{ secrets.SLACK_WEBHOOK_URL }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_TERRAFORM_ROLE_ARN }}
+          aws-region: us-east-1
+
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: "1.7.5"
+          terraform_wrapper: false
+
+      - name: Terraform fmt
+        run: terraform fmt -check -recursive
+
+      - name: Terraform init
+        run: terraform init -upgrade
+
+      - name: Terraform validate
+        run: terraform validate
+
+      - name: Terraform plan
+        if: github.event_name == 'pull_request' || github.event.inputs.action == 'plan'
+        run: terraform plan -no-color -out=tfplan
+
+      - name: Render plan summary
+        if: github.event_name == 'pull_request'
+        run: terraform show -no-color tfplan > tfplan.txt
+
+      - name: Comment plan on PR
+        if: github.event_name == 'pull_request'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            const plan = fs.readFileSync('infra/terraform/tfplan.txt', 'utf8');
+            const truncated = plan.length > 60000 ? plan.slice(0, 60000) + "\n\n... (truncated)" : plan;
+            await github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: "### Terraform plan\n```\n" + truncated + "\n```",
+            });
+
+      - name: Terraform apply
+        if: github.event_name == 'workflow_dispatch' && github.event.inputs.action == 'apply'
+        run: terraform apply -auto-approve
