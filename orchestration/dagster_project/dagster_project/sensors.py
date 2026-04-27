@@ -38,11 +38,23 @@ from dagster import (
 )
 from dagster_aws.s3 import S3Resource
 
+import json
+
+from dagster_project.assets.dbt import DBT_MANIFEST_PATH
 from dagster_project.constants import (
     S3_OPENSKY_PREFIX,
     S3_RAW_BUCKET,
 )
 from dagster_project.resources import SlackAlertResource, SnowflakeResource
+
+
+def _dbt_model_present(name: str) -> bool:
+    try:
+        manifest = json.loads(DBT_MANIFEST_PATH.read_text())
+    except (FileNotFoundError, json.JSONDecodeError):
+        return False
+    return any(node_id.endswith(f".{name}") for node_id in manifest.get("nodes", {}))
+
 
 # -----------------------------------------------------------------------------
 # Job triggered by the opensky-freshness sensor — narrow selector so we only
@@ -50,7 +62,11 @@ from dagster_project.resources import SlackAlertResource, SnowflakeResource
 # -----------------------------------------------------------------------------
 silver_aircraft_state_refresh_job = define_asset_job(
     name="silver_aircraft_state_refresh_job",
-    selection=AssetSelection.keys(AssetKey(["silver_aircraft_state"])),
+    selection=(
+        AssetSelection.keys(AssetKey(["silver_aircraft_state"]))
+        if _dbt_model_present("silver_aircraft_state")
+        else AssetSelection.groups("__no_such_group__")
+    ),
     description="Triggered by opensky_states_raw freshness sensor.",
     tags={"warehouse": "snowflake", "layer": "silver", "trigger": "freshness"},
 )

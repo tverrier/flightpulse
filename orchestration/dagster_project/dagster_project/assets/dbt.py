@@ -18,8 +18,6 @@ Two non-obvious behaviors enforced here, both anchored in CLAUDE.md:
      `dbt parse` lazily on first import if `target/manifest.json` is missing.
 """
 
-from __future__ import annotations
-
 import json
 import os
 import subprocess
@@ -53,25 +51,45 @@ DBT_MANIFEST_PATH: Path = DBT_PROJECT_DIR / "target" / "manifest.json"
 # regenerate on every import — that would slow `dagster dev` substantially.
 # Set FLIGHTPULSE_DBT_REPARSE=1 to force.
 # -----------------------------------------------------------------------------
-def _ensure_manifest() -> Path:
-    if DBT_MANIFEST_PATH.exists() and not os.environ.get("FLIGHTPULSE_DBT_REPARSE"):
-        return DBT_MANIFEST_PATH
+_MANIFEST_REQUIRED_KEYS = (
+    "nodes", "sources", "metrics", "exposures", "semantic_models",
+    "saved_queries", "unit_tests", "groups", "child_map", "parent_map",
+    "group_map", "selectors", "disabled", "macros", "docs",
+)
 
-    cmd = [
-        "dbt", "parse",
-        "--project-dir", str(DBT_PROJECT_DIR),
-        "--profiles-dir", str(DBT_PROFILES_DIR),
-        "--target", DBT_TARGET,
-    ]
-    env = {**os.environ, "DBT_PROFILES_DIR": str(DBT_PROFILES_DIR)}
-    # If dbt isn't on PATH (or fails because creds are missing), fall back to
-    # writing a minimal stub manifest so Definitions still loads. The next
-    # real dbt run will overwrite it.
+
+def _ensure_manifest() -> Path:
+    if not (DBT_MANIFEST_PATH.exists() and not os.environ.get("FLIGHTPULSE_DBT_REPARSE")):
+        cmd = [
+            "dbt", "parse",
+            "--project-dir", str(DBT_PROJECT_DIR),
+            "--profiles-dir", str(DBT_PROFILES_DIR),
+            "--target", DBT_TARGET,
+        ]
+        env = {**os.environ, "DBT_PROFILES_DIR": str(DBT_PROFILES_DIR)}
+        try:
+            subprocess.run(cmd, check=True, env=env, capture_output=True, timeout=120)
+        except (FileNotFoundError, subprocess.CalledProcessError, subprocess.TimeoutExpired):
+            DBT_MANIFEST_PATH.parent.mkdir(parents=True, exist_ok=True)
+            DBT_MANIFEST_PATH.write_text(json.dumps({
+                "metadata": {"adapter_type": "snowflake", "dbt_schema_version": "https://schemas.getdbt.com/dbt/manifest/v12.json"},
+            }))
+
+    # Backfill any keys dagster-dbt 0.24 iterates that older dbt manifests omit.
     try:
-        subprocess.run(cmd, check=True, env=env, capture_output=True, timeout=120)
-    except (FileNotFoundError, subprocess.CalledProcessError, subprocess.TimeoutExpired):
-        DBT_MANIFEST_PATH.parent.mkdir(parents=True, exist_ok=True)
-        DBT_MANIFEST_PATH.write_text(json.dumps({"nodes": {}, "sources": {}, "metadata": {"adapter_type": "snowflake"}}))
+        manifest = json.loads(DBT_MANIFEST_PATH.read_text())
+    except (FileNotFoundError, json.JSONDecodeError):
+        manifest = {}
+    changed = False
+    for k in _MANIFEST_REQUIRED_KEYS:
+        if k not in manifest:
+            manifest[k] = {}
+            changed = True
+    if "metadata" not in manifest:
+        manifest["metadata"] = {"adapter_type": "snowflake"}
+        changed = True
+    if changed:
+        DBT_MANIFEST_PATH.write_text(json.dumps(manifest))
     return DBT_MANIFEST_PATH
 
 

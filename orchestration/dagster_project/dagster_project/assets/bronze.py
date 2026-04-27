@@ -15,8 +15,6 @@ Per PIPELINE.md DAG, three assets land in S3 bronze:
                                 derived from the latest object in S3.
 """
 
-from __future__ import annotations
-
 import datetime as dt
 import os
 from typing import Any

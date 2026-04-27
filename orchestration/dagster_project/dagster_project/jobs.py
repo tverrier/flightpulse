@@ -7,6 +7,8 @@ propagate (this is the encoded defense for INCIDENTS.md #2).
 
 from __future__ import annotations
 
+import json
+
 from dagster import AssetKey, AssetSelection, define_asset_job
 
 from dagster_project.assets import (
@@ -14,10 +16,32 @@ from dagster_project.assets import (
     openflights_airlines_raw,
     openflights_airports_raw,
 )
+from dagster_project.assets.dbt import DBT_MANIFEST_PATH
 from dagster_project.constants import GROUP_GOLD, GROUP_SILVER
 from dagster_project.partitions import BTS_MONTHLY_PARTITIONS
 
 _AGG_KEY = AssetKey(["agg_carrier_otp_daily"])
+
+
+def _agg_asset_present() -> bool:
+    """True iff the dbt manifest currently contains agg_carrier_otp_daily.
+
+    On a fresh local clone the manifest is empty (no Snowflake credentials →
+    `dbt parse` selects no nodes). In that mode the gold jobs still need to
+    *load* even though they'll have nothing to materialize, so we skip the
+    `- keys(_AGG_KEY)` subtraction that would otherwise fail strict resolve.
+    """
+    try:
+        manifest = json.loads(DBT_MANIFEST_PATH.read_text())
+    except (FileNotFoundError, json.JSONDecodeError):
+        return False
+    for node_id in manifest.get("nodes", {}):
+        if node_id.endswith(".agg_carrier_otp_daily"):
+            return True
+    return False
+
+
+_HAS_AGG = _agg_asset_present()
 
 # -----------------------------------------------------------------------------
 # Bronze ingest jobs
@@ -53,9 +77,13 @@ silver_build_job = define_asset_job(
 # -----------------------------------------------------------------------------
 # Gold — *lazy*. Cron-scheduled only; never auto-on-parent.
 # -----------------------------------------------------------------------------
+_gold_selection = AssetSelection.groups(GROUP_GOLD)
+if _HAS_AGG:
+    _gold_selection = _gold_selection - AssetSelection.keys(_AGG_KEY)
+
 gold_refresh_job = define_asset_job(
     name="gold_refresh_job",
-    selection=AssetSelection.groups(GROUP_GOLD) - AssetSelection.keys(_AGG_KEY),
+    selection=_gold_selection,
     description=(
         "Rebuild gold marts (fct_flight_event + dim_*). Runs every 30 min. "
         "Excludes agg_carrier_otp_daily, which has its own daily cadence."
@@ -65,7 +93,7 @@ gold_refresh_job = define_asset_job(
 
 agg_daily_job = define_asset_job(
     name="agg_daily_job",
-    selection=AssetSelection.keys(_AGG_KEY),
+    selection=AssetSelection.keys(_AGG_KEY) if _HAS_AGG else AssetSelection.groups("__no_such_group__"),
     description="Daily roll-up of carrier on-time performance.",
     tags={"warehouse": "snowflake", "layer": "gold"},
 )

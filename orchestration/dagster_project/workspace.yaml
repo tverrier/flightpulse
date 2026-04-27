@@ -3,5 +3,5 @@
 load_from:
   - python_module:
       module_name: dagster_project
-      working_directory: .
+      working_directory: orchestration/dagster_project
       location_name: flightpulse

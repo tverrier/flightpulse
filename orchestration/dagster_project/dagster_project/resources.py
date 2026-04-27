@@ -12,6 +12,7 @@ from __future__ import annotations
 import json
 import logging
 import os
+from pathlib import Path
 from typing import Any
 
 import boto3
@@ -142,10 +143,14 @@ def build_dbt_resource() -> DbtCliResource:
     `profiles_dir` matches what the Makefile sets so behavior is identical
     whether dbt is run by Dagster or by hand.
     """
+    import shutil
+    import sys
+    dbt_exe = shutil.which("dbt") or str(Path(sys.executable).with_name("dbt"))
     return DbtCliResource(
         project_dir=str(DBT_PROJECT_DIR),
         profiles_dir=str(DBT_PROFILES_DIR),
         target=DBT_TARGET,
+        dbt_executable=dbt_exe,
     )
 
 

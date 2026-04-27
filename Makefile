@@ -17,6 +17,7 @@ DBT_PROFILES_DIR ?= $(CURDIR)/dbt
 DBT_PROJECT_DIR  ?= $(CURDIR)/dbt
 DAGSTER_HOME     ?= $(CURDIR)/orchestration/dagster_project/dagster_home
 DAGSTER_MODULE   ?= dagster_project
+DAGSTER_PORT     ?= 3000
 
 # Load .env if present (export every line for child processes).
 ifneq (,$(wildcard ./.env))
@@ -77,17 +78,16 @@ stream-down: ## Stop streaming stack
 # Orchestration + serving
 # -----------------------------------------------------------------------------
 .PHONY: dagster-up
-dagster-up: ## Launch Dagster webserver + daemon at http://localhost:3000
+dagster-up: ## Launch Dagster webserver + daemon at http://localhost:$(DAGSTER_PORT)
 	mkdir -p $(DAGSTER_HOME)
 	DAGSTER_HOME=$(DAGSTER_HOME) \
 	  $(VENV_BIN)/dagster dev \
-	  -m $(DAGSTER_MODULE) \
 	  -w orchestration/dagster_project/workspace.yaml \
-	  -h 0.0.0.0 -p 3000
+	  -h 0.0.0.0 -p $(DAGSTER_PORT)
 
 .PHONY: dashboard
 dashboard: ## Launch Streamlit dashboard at http://localhost:8501
-	$(VENV_BIN)/streamlit run serving/dashboard/app.py \
+	PYTHONPATH=$(CURDIR) $(VENV_BIN)/streamlit run serving/dashboard/app.py \
 	  --server.port 8501 --server.address 0.0.0.0
 
 .PHONY: api

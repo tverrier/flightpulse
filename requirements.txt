@@ -51,7 +51,7 @@ numpy~=1.26.0
 pyyaml~=6.0.0
 requests~=2.32.0
 python-dotenv~=1.0.0
-tenacity~=9.0.0
+tenacity>=8.2,<10  # pyiceberg 0.7 needs tenacity<9
 click~=8.1.0
 
 # --- dev / test ---
