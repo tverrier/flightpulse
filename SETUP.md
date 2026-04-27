@@ -204,3 +204,63 @@ dbt test --select tag:critical
 ```
 
 If any validation returns 0 or fails, see [PIPELINE.md § Failure Runbook](./PIPELINE.md#failure-runbook).
+
+## 11. GitHub Actions Secrets
+
+The four workflows in `.github/workflows/` (`ci.yml`, `terraform.yml`, `dbt-prod.yml`, `dagster-cloud-deploy.yml`) read these from repo-level **Settings → Secrets and variables → Actions**. None of them are invented — every name appears in the workflow files; this section just centralizes them.
+
+### AWS
+
+| Secret | Purpose | Notes |
+|---|---|---|
+| `AWS_TERRAFORM_ROLE_ARN` | Role assumed by `terraform.yml` (OIDC, `id-token: write`) | Trust the GitHub OIDC provider; grant `*:Describe*`, `*:List*`, plus the resource-specific writes the stack needs. |
+| `AWS_DBT_REPORT_ROLE_ARN` | Role assumed by `dbt-prod.yml` so `edr send-report` can `s3:PutObject` to the report bucket | Scope to the bucket in `ELEMENTARY_REPORT_S3_BUCKET`. |
+
+### Snowflake
+
+| Secret | Purpose | Used by |
+|---|---|---|
+| `SNOWFLAKE_ACCOUNT` | Account locator | every workflow |
+| `SNOWFLAKE_TF_USER` / `SNOWFLAKE_TF_PASSWORD` | ACCOUNTADMIN-equivalent for terraform | `terraform.yml` |
+| `SNOWFLAKE_DBT_USER` / `SNOWFLAKE_DBT_PASSWORD` | `svc_dbt` from §4 | `dbt-prod.yml` |
+| `SNOWFLAKE_CI_USER` / `SNOWFLAKE_CI_PASSWORD` | Read-only-ish CI user, scoped to `FLIGHTPULSE_DEV` | `ci.yml` (the `dbt-critical` job) |
+
+### Slack / observability
+
+| Secret | Purpose | Used by |
+|---|---|---|
+| `SLACK_WEBHOOK_URL` | Generic alerts webhook (SNS → Slack subscription + Dagster sensors) | `terraform.yml` (passed as `TF_VAR_slack_webhook_url`), Dagster runtime via `.env` |
+| `ELEMENTARY_SLACK_TOKEN` | Bot token for `edr monitor` to post into `#flightpulse-alerts` | `dbt-prod.yml` |
+| `ELEMENTARY_REPORT_S3_BUCKET` | Bucket name where `edr send-report` uploads the HTML observability report | `dbt-prod.yml` |
+
+### Dagster Cloud
+
+| Secret | Purpose |
+|---|---|
+| `DAGSTER_CLOUD_URL` | e.g. `https://flightpulse.dagster.cloud` |
+| `DAGSTER_CLOUD_API_TOKEN` | Management + agent token from the Dagster Cloud UI |
+| `DAGSTER_CLOUD_ORGANIZATION` | Short org slug |
+| `DAGSTER_CLOUD_IMAGE_REGISTRY` | ECR repo URL — read from `terraform output dagster_code_location_repo` after the main stack applies |
+
+### Quick-paste GitHub CLI
+
+```bash
+gh secret set AWS_TERRAFORM_ROLE_ARN          --body "arn:aws:iam::…:role/…"
+gh secret set AWS_DBT_REPORT_ROLE_ARN         --body "arn:aws:iam::…:role/…"
+gh secret set SNOWFLAKE_ACCOUNT               --body "xy12345.us-east-1"
+gh secret set SNOWFLAKE_TF_USER               --body "TERRAFORM_ADMIN"
+gh secret set SNOWFLAKE_TF_PASSWORD           --body "…"
+gh secret set SNOWFLAKE_DBT_USER              --body "SVC_DBT"
+gh secret set SNOWFLAKE_DBT_PASSWORD          --body "…"
+gh secret set SNOWFLAKE_CI_USER               --body "SVC_DBT_CI"
+gh secret set SNOWFLAKE_CI_PASSWORD           --body "…"
+gh secret set SLACK_WEBHOOK_URL               --body "https://hooks.slack.com/services/…"
+gh secret set ELEMENTARY_SLACK_TOKEN          --body "xoxb-…"
+gh secret set ELEMENTARY_REPORT_S3_BUCKET     --body "flightpulse-edr-reports"
+gh secret set DAGSTER_CLOUD_URL               --body "https://flightpulse.dagster.cloud"
+gh secret set DAGSTER_CLOUD_API_TOKEN         --body "…"
+gh secret set DAGSTER_CLOUD_ORGANIZATION      --body "flightpulse"
+gh secret set DAGSTER_CLOUD_IMAGE_REGISTRY    --body "$(cd infra/terraform && terraform output -raw dagster_code_location_repo)"
+```
+
+The workflows tolerate missing secrets in two cases: fork PRs skip `dbt-critical` (no Snowflake creds), and `terraform.yml` only auto-applies via `workflow_dispatch`. Everything else is required.
