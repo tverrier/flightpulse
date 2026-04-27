@@ -62,6 +62,33 @@ Streamlit dashboard, Snowflake-backed: `agg_carrier_otp_daily` for trends, `fct_
 
 Reconciliation between BTS and OpenSky. BTS uses tail numbers, OpenSky uses ICAO24 hex codes — the join goes through `dim_aircraft` and isn't always clean (registrations transfer, tail numbers get reused). `int_flight_event_reconciled` is the most-tested model in the project; the `reconciliation_status` column comes from there. It also forced me to make the live arrival timestamp explicitly *provisional* — BTS actual is preferred when available, OpenSky is a placeholder.
 
+### 16. Walk me through your observability — what wakes you up at 3 a.m.?
+
+Three planes, each tied to one of the three documented incidents.
+
+**Test correctness — elementary → Dagster sensor → Slack.** Every dbt invocation appends to `FLIGHTPULSE_OBS.elementary.alerts` via on-run-end hooks. A Dagster sensor (`elementary_alerts_sensor`) polls that table every 5 min, advances a cursor on `max(detected_at)` so a restart never double-posts, and severity-routes critical-tagged failures to `:rotating_light:`. Non-critical noise stays in the same channel as `:warning:` so I see drift trends without paging.
+
+**Streaming + warehouse health — CloudWatch alarms.** Six alarms wired to one SNS topic that fans to Slack:
+
+| Alarm | Threshold | Encoded incident |
+|---|---|---|
+| `producer_silent` | `MessagesPublished` < 1 over 2 min | #3 (TCP half-close) — fast page |
+| `producer_heartbeat_stale` | `MessagesPublished` < 1 over 5 min | #3 — slower page, deduped |
+| `producer_fetch_fatal` | `FetchFatal` > 0 / min | OpenSky 4xx other than 429 |
+| `consumer_dlq_rate` | `MessagesDLQ` > 50 / 5 min | poison pill / Avro drift |
+| `snowflake_credit_burn` | `SnowflakeCreditsLastHour` > 10% of monthly cap | #2 (MERGE-loop) — early warning ahead of the resource monitor's 80% hard suspend |
+| `unreviewed_drift` | `UnreviewedDriftRows` > 0 (rows older than 7 d with no reviewer) | #1 mirror in the metric plane |
+
+The credit and drift metrics come from two small Lambdas on EventBridge schedules — they read Snowflake (`ACCOUNT_USAGE.WAREHOUSE_METERING_HISTORY` and `FLIGHTPULSE_OBS.SCHEMA_DRIFT.BTS_COLUMN_DRIFT` respectively) and put-metric to CloudWatch. The IAM role is locked down to `secretsmanager:GetSecretValue` on one secret and `cloudwatch:PutMetricData` scoped by namespace condition.
+
+**CI/CD — fail-loud at PR time.** Three GitHub Actions workflows:
+
+* `ci.yml` — ruff + mypy + pytest + `dbt parse` + `dbt test --select tag:critical` against a per-PR Snowflake schema (`ci_pr_<NUMBER>`), cleaned up on success via the `drop_ci_schema` macro (which refuses any name not prefixed `ci_pr_`).
+* `terraform.yml` — `fmt -recursive` + `validate` + plan-on-PR with the rendered plan auto-commented; `apply` is workflow-dispatch only so infra changes never auto-apply on merge.
+* `dbt-prod.yml` — on push to main: silver + gold build, critical tests, `edr send-report` (HTML obs report to S3), `edr monitor` (any failures fanned to Slack).
+
+The interview-ready summary: "every load-bearing failure mode I've actually seen is wired to either dbt + elementary, CloudWatch + Slack, or a CI gate. Belt-and-suspenders on Incident #2 — a CloudWatch credit alarm fires before Snowflake's resource monitor hits its 80% hard suspend, so on-call gets a chance to investigate before the warehouse goes dark."
+
 ## 5 Questions to Ask the Interviewer
 
 1. *"How is your team currently handling late-arriving and corrected data — at the source, in transformation, or via warehouse merge logic?"* — reveals their maturity around real-world data.
