@@ -114,7 +114,6 @@ flightpulse/
 ├── PIPELINE.md                   # ingestion + DAG + runbook
 ├── DATA_MODEL.md                 # tables + dbt models + lineage
 ├── INCIDENTS.md                  # 3 post-mortems
-├── INTERVIEW_PREP.md             # talking points + glossary
 ├── Makefile                      # all dev shortcuts
 ├── .env.example                  # env var template
 ├── infra/
@@ -163,4 +162,3 @@ The full cloud path — AWS (MSK Serverless, S3, Glue, Lambda, CloudWatch), Snow
 - [PIPELINE.md](./PIPELINE.md) — batch + streaming specs, idempotency, runbook
 - [DATA_MODEL.md](./DATA_MODEL.md) — schemas, dbt graph, lineage
 - [INCIDENTS.md](./INCIDENTS.md) — real failure write-ups
-- [INTERVIEW_PREP.md](./INTERVIEW_PREP.md) — how to talk about this in a job interview

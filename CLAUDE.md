@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Source-of-truth specs
 
-Seven markdown specs at the repo root drive every implementation decision. Treat them as canonical — if code disagrees with a spec, fix the code (or change the spec deliberately, never silently):
+Six markdown specs at the repo root drive every implementation decision. Treat them as canonical — if code disagrees with a spec, fix the code (or change the spec deliberately, never silently):
 
 - `README.md` — folder layout + quickstart
 - `ARCHITECTURE.md` — data flow, tool tradeoffs, partitioning, cost
@@ -12,7 +12,6 @@ Seven markdown specs at the repo root drive every implementation decision. Treat
 - `PIPELINE.md` — ingestion specs, idempotency strategy, schema-drift handling, Dagster DAG, failure runbook
 - `DATA_MODEL.md` — gold schema column-by-column, fact/dim classification, dbt test matrix, lineage map
 - `INCIDENTS.md` — three real post-mortems whose lessons are encoded into the code (see *Encoded lessons* below)
-- `INTERVIEW_PREP.md` — talking points
 
 ## Common commands
 

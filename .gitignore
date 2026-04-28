@@ -142,3 +142,6 @@ serving/api/models/*.bin
 serving/api/models/*.joblib
 serving/api/models/*.json
 !serving/api/models/.gitkeep
+
+# Personal/private docs — not pushed to GitHub
+INTERVIEW_PREP.md
